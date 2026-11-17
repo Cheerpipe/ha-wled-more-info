@@ -43,10 +43,13 @@ import type {
 } from "../ha/types";
 import { shownLeaf, writeLeaves } from "../groups";
 import { localize, type TranslationKey } from "../localize/localize";
-import { ensureMoreInfoElements } from "../controls/loader";
-import { POPUP_FILL_EVENT } from "../controls/popup-fill";
 import {
-  LIGHT_TAGS,
+  loadWledCardElements,
+  wledCardElementsDefined,
+} from "../controls/loader";
+import { POPUP_FILL_EVENT } from "../controls/popup-fill";
+import { preloadWledLight } from "../preload";
+import {
   lightSupportsBrightness,
   lightSupportsColor,
   lightSupportsColorTemp,
@@ -130,6 +133,22 @@ const isBlack = (color: Rgb | undefined) =>
   !color || (color[0] === 0 && color[1] === 0 && color[2] === 0);
 
 export class MoreInfoWledStateCard extends LitElement {
+  /**
+   * Loads what the card needs to draw complete (native chunks, the light's
+   * link, effects and segments). A container that opens the card in a
+   * dialog (more-info-popup-card) awaits it, so the dialog opens at its
+   * final size. Never rejects.
+   */
+  public static async preload(
+    config: Partial<WledCardConfig>,
+    hass: HomeAssistant | undefined,
+  ): Promise<void> {
+    await Promise.allSettled([
+      loadWledCardElements(),
+      hass && config.entity ? preloadWledLight(hass, config.entity) : undefined,
+    ]);
+  }
+
   public static getConfigElement() {
     return document.createElement(WLED_CARD_EDITOR_TAG);
   }
@@ -317,18 +336,10 @@ export class MoreInfoWledStateCard extends LitElement {
     if (!this._config || !this.hass) return;
     if (!this._ready && this._stateObj) {
       this._ready = true;
-      ensureMoreInfoElements("light", [
-        "ha-state-control-light-brightness",
-        "ha-more-info-state-header",
-        "ha-hs-color-picker",
-        "ha-control-slider",
-        ...LIGHT_TAGS,
-      ]).then(() => this.requestUpdate());
-      ensureMoreInfoElements("vacuum", [
-        "ha-more-info-control-select-container",
-        "ha-control-button",
-        "ha-control-button-group",
-      ]).then(() => this.requestUpdate());
+      // Usually preloaded (`preload.ts`): nothing to wait for.
+      if (!wledCardElementsDefined()) {
+        loadWledCardElements().then(() => this.requestUpdate());
+      }
     }
     if (!this.inDialog && this._stateObj) this._loadEntry();
     // A group links again when its members change.

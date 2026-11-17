@@ -23,10 +23,11 @@ if (!window.customCards.some((card) => card.type === WLED_CARD_TYPE)) {
   });
 }
 
-if (replaceFromUrl(import.meta.url)) {
-  replaceNativeMoreInfo();
-  preloadWledLights();
-}
+const replace = replaceFromUrl(import.meta.url);
+if (replace) replaceNativeMoreInfo();
+// The card's chunks always (it can be in a dashboard or a popup); the
+// lights' data when every WLED more-info shows it.
+preloadWledLights({ data: replace });
 
 console.info(
   `%c WLED-MORE-INFO %c ${__VERSION__} `,

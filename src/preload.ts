@@ -1,8 +1,10 @@
 /**
- * Prepares the WLED lights' data in the background once Home Assistant has
- * loaded (links, effects and palettes, segment state), so even the first
- * more-info opening draws complete, with every button and the presets.
+ * Prepares the WLED card in the background once Home Assistant has loaded:
+ * the native chunks it draws with and the lights' data (links, effects and
+ * palettes, segment state). Even the first opening then draws complete, at
+ * its final size, with every button and the presets.
  */
+import { loadWledCardElements } from "./controls/loader";
 import type { HomeAssistant } from "./ha/types";
 import { isWledLight } from "./native-more-info";
 import { getSegments, type WledTarget } from "./wled/api";
@@ -36,25 +38,50 @@ const waitForHass = async (): Promise<HomeAssistant | undefined> => {
   return undefined;
 };
 
-/** One light at a time, while the browser is idle; errors are ignored. */
-export const preloadWledLights = async (): Promise<void> => {
+/**
+ * The data of one light's device (link, effects, segments), cached for the
+ * page. Resolves with its device, or undefined when it is not a WLED light.
+ */
+export const preloadWledLight = async (
+  hass: HomeAssistant,
+  entityId: string,
+  skip?: ReadonlySet<string>,
+): Promise<string | undefined> => {
+  const link = await resolveWledLight(hass, entityId);
+  if (typeof link !== "object") return undefined;
+  if (skip?.has(link.deviceId)) return link.deviceId;
+  const target: WledTarget = {
+    hass,
+    entityId: link.entityId,
+    deviceId: link.deviceId,
+  };
+  await loadEffects(target);
+  await getSegments(target);
+  return link.deviceId;
+};
+
+/**
+ * While the browser is idle: the card's native chunks, then (with `data`)
+ * each light's data, one at a time. Errors are ignored.
+ */
+export const preloadWledLights = async ({
+  data,
+}: {
+  data: boolean;
+}): Promise<void> => {
   const hass = await waitForHass();
   if (!hass) return;
   const lights = Object.keys(hass.states).filter((id) => isWledLight(hass, id));
+  if (!lights.length) return;
+  await whenIdle();
+  await loadWledCardElements().catch(() => false);
+  if (!data) return;
   const devices = new Set<string>();
   for (const entityId of lights) {
     await whenIdle();
     try {
-      const link = await resolveWledLight(hass, entityId);
-      if (typeof link !== "object" || devices.has(link.deviceId)) continue;
-      devices.add(link.deviceId);
-      const target: WledTarget = {
-        hass,
-        entityId: link.entityId,
-        deviceId: link.deviceId,
-      };
-      await loadEffects(target);
-      await getSegments(target);
+      const deviceId = await preloadWledLight(hass, entityId, devices);
+      if (deviceId) devices.add(deviceId);
     } catch {
       // The card loads it again when opened.
     }
